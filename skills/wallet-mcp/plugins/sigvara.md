@@ -13,7 +13,7 @@ requires:
     name: sigvara
     transport: stdio
     command: npx
-    args: ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.17", "sigvara-mcp"]
+    args: ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.18", "sigvara-mcp"]
     env: []
   cliPackage: null
 auth: none
@@ -42,7 +42,7 @@ The server runs on the user's machine through `npx`, so it needs Node.js. No key
 **Claude Code**
 
 ```bash
-claude mcp add sigvara -- npx -y -p @sigvara/protocol-sdk@1.0.0-alpha.17 sigvara-mcp
+claude mcp add sigvara -- npx -y -p @sigvara/protocol-sdk@1.0.0-alpha.18 sigvara-mcp
 ```
 
 **Codex** (`~/.codex/config.toml`)
@@ -50,7 +50,7 @@ claude mcp add sigvara -- npx -y -p @sigvara/protocol-sdk@1.0.0-alpha.17 sigvara
 ```toml
 [mcp_servers.sigvara]
 command = "npx"
-args = ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.17", "sigvara-mcp"]
+args = ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.18", "sigvara-mcp"]
 ```
 
 **Cursor and other JSON configs** (`.cursor/mcp.json`)
@@ -60,7 +60,7 @@ args = ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.17", "sigvara-mcp"]
   "mcpServers": {
     "sigvara": {
       "command": "npx",
-      "args": ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.17", "sigvara-mcp"]
+      "args": ["-y", "-p", "@sigvara/protocol-sdk@1.0.0-alpha.18", "sigvara-mcp"]
     }
   }
 }
@@ -73,11 +73,14 @@ Restart the harness after adding it. Source: https://github.com/RunTimeAdmin/Sig
 | Capability | Harness with a shell and an MCP config (Claude Code, Codex, Cursor) | Chat-only surface (Claude.ai, ChatGPT) |
 | - | - | - |
 | Read an agent's record | External MCP, `sigvara_check_agent` | Stop. Say the integration needs a local install. Do not improvise a `web_request` or paste workaround |
+| Check whether a score's payments match what was committed on chain | External MCP, `sigvara_verify_evidence` | Stop, as above |
 | Read the recipient's code or an x402 seller's terms | Wallet MCP `chain_rpc_request`, `probe_x402_response` | Not needed without the check |
 
 On a chat-only surface the user can still look an agent up themselves at `https://sigvara.xyz/epochs?a=<address>`.
 
 ## Orchestration
+
+### Check an agent before paying it
 
 1. Run Wallet MCP onboarding (`SKILL.md`).
 2. Get the address the money would go to. The user may give it. For an x402 seller, call `probe_x402_response` and read `payTo` from the offer the user would pay. That is the address that matters, not a name or an address the counterparty offers in conversation.
@@ -85,6 +88,11 @@ On a chat-only surface the user can still look an agent up themselves at `https:
 4. Call `sigvara_check_agent` with `agent` set to the address. Pass `threshold` only if the user named one. Never choose one for them.
 5. Report as described in `### Presenting results`.
 6. Stop. The user decides. If they go on to pay, that is Wallet MCP's own flow, with its own approval (`## Submission`).
+
+### Check what a score rests on
+
+1. Call `sigvara_verify_evidence` with the same `agent`. It fetches the payments the primary oracle lists, rebuilds the root from them and asks the contract to confirm up to the last 100.
+2. Report `finalized.reproduced`, `finalized.covers` and `finalized.confirmedByContract`. A reproduced root shows the oracle scored on exactly the payments it lists. It does not show each transaction happened as listed: for that, a payment's `txHash` can be read on the chain its `chainId` names.
 
 ### Presenting results
 
@@ -113,6 +121,10 @@ On a chat-only surface the user can still look an agent up themselves at `https:
 3. `sigvara_check_agent` with `threshold: 70`.
 4. If `decision.ok` is false, give its `reason` and `detail`. Ask the user what to do, and do not pay.
 
+**"What is that agent's score based on?"**
+1. `sigvara_verify_evidence` with the address.
+2. Report whether the finalized root was reproduced, how many payments it covers and how many the contract confirmed: for the agent above, 70 of 70 on 8 November 2026.
+
 **"Check this agent."** (on Claude.ai or ChatGPT)
 1. No `sigvara_*` tools are available, and they cannot be installed here.
 2. Say the check needs a local install, and give `https://sigvara.xyz/epochs?a=<address>` for looking it up by hand.
@@ -130,6 +142,5 @@ On a chat-only surface the user can still look an agent up themselves at `https:
 - `signals[].code` values: `not_registered`, `never_bonded`, `never_scored`, `below_minimum_stake`, `suspended`, `slashed`, `slash_pending`, `slash_disputed`, `withdrawal_queued`, `score_maturing`, `score_pending`, `score_stale`.
 - `decision.reason` values: `not_active`, `stale_score`, `below_threshold`.
 - `sigvara_check_agent` also takes `maxScoreAgeSeconds`, which refuses a score older than that.
-- Contracts on Arc testnet are in each answer's `source.contracts`. Integration guide: https://sigvara.xyz/integrate.
+- Contracts on Arc testnet are in each answer's `source.contracts`. Integration guide: https://sigvara.xyz/integrate. Every agent, with the same evidence check run in the browser: https://sigvara.xyz/agents.
 - **The public Arc RPC limits bursts.** Several checks in quick succession can fail with `Could not read the chain: missing revert data`. That is a rate limit, not a finding. Wait about 15 seconds and ask again, one at a time.
-- **Evidence behind a score.** The server also offers `sigvara_verify_evidence`. In this version it sends too many calls at once for the public RPC and fails on an agent with a long payment history. If the user asks what a score rests on, point them to https://sigvara.xyz/agents, which runs the same check in the browser. That failure says nothing about the agent.
